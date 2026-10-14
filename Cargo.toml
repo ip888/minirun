@@ -1,0 +1,9 @@
+[package]
+name = "minirun"
+version = "0.1.0"
+edition = "2024"
+description = "Measure cold-start of a containerised workload (p50/p99)"
+license = "MIT"
+authors = ["Ihor Petrov <ihorpetroff@gmail.com>"]
+
+[dependencies]
