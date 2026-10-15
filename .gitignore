@@ -1,1 +1,14 @@
 /target
+
+# secrets / local env
+.env
+
+# IDE (personal settings)
+.idea/
+.vscode/settings.json
+
+# benchmark results
+bench-*.json
+
+# local curriculum (lives in Google Drive)
+rust-selfedu-minirun-curriculum.md
