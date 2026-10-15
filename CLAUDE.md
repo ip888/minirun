@@ -1,6 +1,6 @@
 # CLAUDE.md — minirun (learning-by-doing)
 
-Я (Ihor) — Java-dev в Citibank, изучаю Rust через этот pet-project.
+Я (Ihor) — Java-dev, изучаю Rust через этот edu-project.
 Это solo-проект **для self-education по Rust**, не для портфолио, не
 production. Главная цель — личный Rust fluency + разговорный материал
 на будущих интервью. Не копипаст — учебная среда.
