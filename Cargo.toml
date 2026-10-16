@@ -7,3 +7,4 @@ license = "MIT"
 authors = ["Ihor Petrov <ihorpetroff@gmail.com>"]
 
 [dependencies]
+clap = { version = "4.5", features = ["derive"] }
