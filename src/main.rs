@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::process::Command;
 
 #[derive(Parser)]
 #[command(about = "Measure cold-start of a containerised workload")]
@@ -20,10 +21,66 @@ struct Cli {
     iters: u32,
 }
 
+fn start_container(image: &str, publish: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let output = Command::new("docker")
+        .arg("run")
+        .arg("--rm")
+        .arg("-d")
+        .arg("-p")
+        .arg(publish)
+        .arg(image)
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to start container: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 fn main() {
     let args = Cli::parse();
     println!(
         "would run {} ({} iters, wait_url: {})",
         args.image, args.iters, args.wait_url
     );
+
+    let container_id = match start_container(&args.image, &args.publish) {
+        Ok(container_id) => {
+            println!("Started container: {}", container_id);
+            container_id
+        }
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // After launch wait for 3 seconds
+    std::thread::sleep(std::time::Duration::from_secs(3));
+
+    // Stop existing container using the docker stop command and container ID
+    let stop_output = Command::new("docker")
+        .arg("stop")
+        .arg(&container_id)
+        .output();
+
+    // check if stop was successful by inspecting the container status
+    match stop_output {
+        Ok(output) => {
+            if output.status.success() {
+                println!("Stopped container successfully");
+            } else {
+                eprintln!(
+                    "Failed to stop container: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!("Failed to execute docker stop: {}", e);
+        }
+    }
 }
