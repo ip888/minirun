@@ -1,5 +1,6 @@
 use clap::Parser;
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 #[derive(Parser)]
 #[command(about = "Measure cold-start of a containerised workload")]
@@ -47,6 +48,7 @@ fn main() {
         args.image, args.iters, args.wait_url
     );
 
+    let start = Instant::now();
     let container_id = match start_container(&args.image, &args.publish) {
         Ok(container_id) => {
             println!("Started container: {}", container_id);
@@ -59,7 +61,10 @@ fn main() {
     };
 
     // After launch wait for 3 seconds
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    std::thread::sleep(Duration::from_secs(3));
+
+    let duration = start.elapsed().as_millis();
+    println!("Cold-start measurement took: {:?}", duration);
 
     // Stop existing container using the docker stop command and container ID
     let stop_output = Command::new("docker")
