@@ -63,8 +63,8 @@ fn main() {
     // After launch wait for 3 seconds
     std::thread::sleep(Duration::from_secs(3));
 
-    let duration = start.elapsed().as_millis();
-    println!("Cold-start measurement took: {:?}", duration);
+    let duration_ms = start.elapsed().as_millis();
+    println!("Cold-start measurement took: {} ms", duration_ms);
 
     // Stop existing container using the docker stop command and container ID
     let stop_output = Command::new("docker")
