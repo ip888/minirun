@@ -55,7 +55,8 @@ GitHub Actions CI.
 
 <https://drive.google.com/file/d/1Z3QD5ARFI9AsaIhf-zd1txvCFPDKCXGi/view>
 
-**Текущая фаза:** Phase 3
+**Текущая фаза:** Phase 4
+
 <!-- 👆 обнови здесь когда перейдёшь на следующую фазу -->
 
 ## База объяснений / диаграмм (общая на три self-edu проекта)
@@ -94,7 +95,7 @@ GitHub Actions CI.
 
 - Не добавлять блоатные deps (hyper, actix, warp) — цель self-edu
   показать себе что знаю низкоуровневый async/HTTP стек. `tokio +
-  reqwest` достаточно.
+reqwest` достаточно.
 - Не копировать код из `rust-nano-vm/crates/bench/*` — чтобы я его сам
   попял/набрал.
 - Не хардкодить Spring Boot / JVM — это **universal** cold-start

@@ -41,6 +41,21 @@ fn start_container(image: &str, publish: &str) -> Result<String, Box<dyn std::er
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+fn stop_container(container_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let output = Command::new("docker")
+        .arg("stop")
+        .arg(container_id)
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to stop container: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+    Ok(())
+}
+
 fn main() {
     let args = Cli::parse();
     println!(
@@ -66,26 +81,8 @@ fn main() {
     let duration_ms = start.elapsed().as_millis();
     println!("Cold-start measurement took: {} ms", duration_ms);
 
-    // Stop existing container using the docker stop command and container ID
-    let stop_output = Command::new("docker")
-        .arg("stop")
-        .arg(&container_id)
-        .output();
-
-    // check if stop was successful by inspecting the container status
-    match stop_output {
-        Ok(output) => {
-            if output.status.success() {
-                println!("Stopped container successfully");
-            } else {
-                eprintln!(
-                    "Failed to stop container: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                );
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to execute docker stop: {}", e);
-        }
+    // Stop the container after measurement
+    if let Err(e) = stop_container(&container_id) {
+        eprintln!("{}", e);
     }
 }
