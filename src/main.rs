@@ -56,7 +56,8 @@ fn stop_container(container_id: &str) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Cli::parse();
     println!(
         "would run {} ({} iters, wait_url: {})",
