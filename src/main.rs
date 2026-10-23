@@ -56,6 +56,23 @@ fn stop_container(container_id: &str) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
+async fn wait_for_200(url: &str, timeout: Duration) -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(1))
+        .build()?;
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if let Ok(resp) = client.get(url).send().await
+            && resp.status() == reqwest::StatusCode::OK
+        {
+            return Ok(());
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    Err(format!("Timeout waiting for 200 OK from {}", url).into())
+}
+
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
@@ -76,14 +93,19 @@ async fn main() {
         }
     };
 
-    // After launch wait for 3 seconds
-    std::thread::sleep(Duration::from_secs(3));
-
+    let result = wait_for_200(&args.wait_url, Duration::from_secs(60)).await;
     let duration_ms = start.elapsed().as_millis();
-    println!("Cold-start measurement took: {} ms", duration_ms);
-
-    // Stop the container after measurement
-    if let Err(e) = stop_container(&container_id) {
-        eprintln!("{}", e);
+    stop_container(&container_id).unwrap_or_else(|e| eprintln!("{}", e));
+    match result {
+        Ok(()) => {
+            println!(
+                "Successfully received 200 OK from {} after {} ms",
+                args.wait_url, duration_ms
+            );
+        }
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
     }
 }
