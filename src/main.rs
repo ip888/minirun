@@ -73,6 +73,22 @@ async fn wait_for_200(url: &str, timeout: Duration) -> Result<(), Box<dyn std::e
     Err(format!("Timeout waiting for 200 OK from {}", url).into())
 }
 
+async fn measure_once(
+    image: &str,
+    publish: &str,
+    wait_url: &str,
+) -> Result<Duration, Box<dyn std::error::Error>> {
+    let start = Instant::now();
+    let container_id = start_container(image, publish)?;
+    let result = wait_for_200(wait_url, Duration::from_secs(60)).await;
+    let elapsed = start.elapsed();
+    stop_container(&container_id)?;
+    match result {
+        Ok(()) => Ok(elapsed),
+        Err(e) => Err(e),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
@@ -81,31 +97,41 @@ async fn main() {
         args.image, args.iters, args.wait_url
     );
 
-    let start = Instant::now();
-    let container_id = match start_container(&args.image, &args.publish) {
-        Ok(container_id) => {
-            println!("Started container: {}", container_id);
-            container_id
+    let mut durations = Vec::new();
+    for i in 0..args.iters {
+        println!("Iteration {}/{}", i + 1, args.iters);
+        match measure_once(&args.image, &args.publish, &args.wait_url).await {
+            Ok(duration) => {
+                println!(
+                    "Successfully received 200 OK from {} after {} ms",
+                    args.wait_url,
+                    duration.as_millis()
+                );
+                durations.push(duration);
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+            }
         }
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
-    };
+    }
 
-    let result = wait_for_200(&args.wait_url, Duration::from_secs(60)).await;
-    let duration_ms = start.elapsed().as_millis();
-    stop_container(&container_id).unwrap_or_else(|e| eprintln!("{}", e));
-    match result {
-        Ok(()) => {
-            println!(
-                "Successfully received 200 OK from {} after {} ms",
-                args.wait_url, duration_ms
-            );
+    // All values and total sum of durations
+    if !durations.is_empty() {
+        for duration in &durations {
+            println!("  {} ms", duration.as_millis());
         }
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
+        let total: Duration = durations.iter().sum();
+        let avg = total / durations.len() as u32;
+        println!("Total duration: {} ms", total.as_millis());
+        println!("Average duration: {} ms", avg.as_millis());
+    }
+
+    if durations.len() < args.iters as usize {
+        eprintln!(
+            "Warning: Only {} out of {} iterations succeeded",
+            durations.len(),
+            args.iters
+        );
+        std::process::exit(1);
     }
 }
