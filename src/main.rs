@@ -22,6 +22,55 @@ struct Cli {
     iters: u32,
 }
 
+#[derive(Debug)]
+struct Stats {
+    p50: Duration,
+    p99: Duration,
+    mean: Duration,
+    stddev: Duration,
+    min: Duration,
+    max: Duration,
+}
+
+/// Panics if durations is empty
+///
+/// # Arguments
+///
+/// * `durations` - A slice of `Duration` values to compute statistics for
+///
+/// # Returns
+///
+/// A `Stats` struct containing p50, p99, mean, stddev, min, and max durations
+fn stats(durations: &[Duration]) -> Stats {
+    let mut sorted = durations.to_vec();
+    sorted.sort();
+    let min = *sorted.first().unwrap();
+    let max = *sorted.last().unwrap();
+    let mean = sorted.iter().sum::<Duration>() / sorted.len() as u32;
+    let p50 = sorted[sorted.len() / 2];
+    let p99 = sorted[(sorted.len() * 99 / 100).min(sorted.len() - 1)];
+    let stddev = {
+        let mean_secs = mean.as_secs_f64();
+        let variance = sorted
+            .iter()
+            .map(|&d| {
+                let diff = d.as_secs_f64() - mean_secs;
+                diff * diff
+            })
+            .sum::<f64>()
+            / sorted.len() as f64;
+        Duration::from_secs_f64(variance.sqrt())
+    };
+    Stats {
+        p50,
+        p99,
+        mean,
+        stddev,
+        min,
+        max,
+    }
+}
+
 fn start_container(image: &str, publish: &str) -> Result<String, Box<dyn std::error::Error>> {
     let output = Command::new("docker")
         .arg("run")
@@ -120,10 +169,14 @@ async fn main() {
         for duration in &durations {
             println!("  {} ms", duration.as_millis());
         }
-        let total: Duration = durations.iter().sum();
-        let avg = total / durations.len() as u32;
-        println!("Total duration: {} ms", total.as_millis());
-        println!("Average duration: {} ms", avg.as_millis());
+
+        let summary = stats(&durations);
+        println!("Average duration: {} ms", summary.mean.as_millis());
+        println!("Min duration: {} ms", summary.min.as_millis());
+        println!("Max duration: {} ms", summary.max.as_millis());
+        println!("P50 duration: {} ms", summary.p50.as_millis());
+        println!("P99 duration: {} ms", summary.p99.as_millis());
+        println!("Stddev duration: {} ms", summary.stddev.as_millis());
     }
 
     if durations.len() < args.iters as usize {
