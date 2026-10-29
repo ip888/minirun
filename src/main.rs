@@ -20,6 +20,17 @@ struct Cli {
     /// Number of cold-start iterations to measure
     #[arg(long, default_value_t = 5)]
     iters: u32,
+
+    /// Output format for the results
+    #[arg(long, value_enum, default_value = "human")]
+    output: OutputFormat,
+}
+
+/// How to print the results
+#[derive(clap::ValueEnum, Clone)]
+enum OutputFormat {
+    Human,
+    Json,
 }
 
 #[derive(Debug)]
@@ -30,6 +41,32 @@ struct Stats {
     stddev: Duration,
     min: Duration,
     max: Duration,
+}
+
+/// Stats in JSON-friendly form: plain numbers in milliseconds
+#[derive(serde::Serialize)]
+struct StatsJson {
+    runs: usize,
+    p50_ms: u128,
+    p99_ms: u128,
+    mean_ms: u128,
+    stddev_ms: u128,
+    min_ms: u128,
+    max_ms: u128,
+}
+
+impl Stats {
+    fn to_json(&self, runs: usize) -> StatsJson {
+        StatsJson {
+            runs,
+            p50_ms: self.p50.as_millis(),
+            p99_ms: self.p99.as_millis(),
+            mean_ms: self.mean.as_millis(),
+            stddev_ms: self.stddev.as_millis(),
+            min_ms: self.min.as_millis(),
+            max_ms: self.max.as_millis(),
+        }
+    }
 }
 
 /// Panics if durations is empty
@@ -141,17 +178,17 @@ async fn measure_once(
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
-    println!(
+    eprintln!(
         "would run {} ({} iters, wait_url: {})",
         args.image, args.iters, args.wait_url
     );
 
     let mut durations = Vec::new();
     for i in 0..args.iters {
-        println!("Iteration {}/{}", i + 1, args.iters);
+        eprintln!("Iteration {}/{}", i + 1, args.iters);
         match measure_once(&args.image, &args.publish, &args.wait_url).await {
             Ok(duration) => {
-                println!(
+                eprintln!(
                     "Successfully received 200 OK from {} after {} ms",
                     args.wait_url,
                     duration.as_millis()
@@ -167,18 +204,31 @@ async fn main() {
     // All values and total sum of durations
     if !durations.is_empty() {
         for duration in &durations {
-            println!("  {} ms", duration.as_millis());
+            eprintln!("  {} ms", duration.as_millis());
         }
 
         let summary = stats(&durations);
-        println!("Average duration: {} ms", summary.mean.as_millis());
-        println!("Min duration: {} ms", summary.min.as_millis());
-        println!("Max duration: {} ms", summary.max.as_millis());
-        println!("P50 duration: {} ms", summary.p50.as_millis());
-        println!("P99 duration: {} ms", summary.p99.as_millis());
-        println!("Stddev duration: {} ms", summary.stddev.as_millis());
+        match args.output {
+            OutputFormat::Human => {
+                println!("cold start ({} runs):", durations.len());
+                println!(" p50: {} ms", summary.p50.as_millis());
+                println!(" p99: {} ms", summary.p99.as_millis());
+                println!(
+                    " mean ± stddev: {} ± {} ms",
+                    summary.mean.as_millis(),
+                    summary.stddev.as_millis()
+                );
+                println!(" min: {} ms", summary.min.as_millis());
+                println!(" max: {} ms", summary.max.as_millis());
+            }
+            OutputFormat::Json => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&summary.to_json(durations.len())).unwrap()
+                );
+            }
+        }
     }
-
     if durations.len() < args.iters as usize {
         eprintln!(
             "Warning: Only {} out of {} iterations succeeded",
