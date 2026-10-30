@@ -54,7 +54,7 @@ GitHub Actions CI.
 
 Полный curriculum с 10 фазами (1 фаза = 1 вечер) в Google Drive:
 
-<https://drive.google.com/file/d/1Z3QD5ARFI9AsaIhf-zd1txvCFPDKCXGi/view>
+<https://drive.google.com/file/d/11YD4qbxgPY7eykEAU7pr1SYdSiOflKi-/view>
 
 **Текущая фаза:** Phase 9
 
