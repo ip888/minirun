@@ -2,6 +2,21 @@ use clap::Parser;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+/// All the ways a minirun measurement can fail
+#[derive(Debug, thiserror::Error)]
+enum MiniRunError {
+    #[error("docker: {0}")]
+    Docker(String),
+    #[error("http: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("timeout waiting for {url} after {secs}s")]
+    Timeout { url: String, secs: u64 },
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("json: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
 #[derive(Parser)]
 #[command(about = "Measure cold-start of a containerised workload")]
 struct Cli {
@@ -20,6 +35,10 @@ struct Cli {
     /// Number of cold-start iterations to measure
     #[arg(long, default_value_t = 5)]
     iters: u32,
+
+    /// Seconds to wait for the service to answer 200 OK per iteration
+    #[arg(long, default_value_t = 60)]
+    timeout: u64,
 
     /// Output format for the results
     #[arg(long, value_enum, default_value = "human")]
@@ -108,7 +127,7 @@ fn stats(durations: &[Duration]) -> Stats {
     }
 }
 
-fn start_container(image: &str, publish: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn start_container(image: &str, publish: &str) -> Result<String, MiniRunError> {
     let output = Command::new("docker")
         .arg("run")
         .arg("--rm")
@@ -118,31 +137,29 @@ fn start_container(image: &str, publish: &str) -> Result<String, Box<dyn std::er
         .arg(image)
         .output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(MiniRunError::Docker(format!(
             "Failed to start container: {}",
             String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
+        )));
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-fn stop_container(container_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn stop_container(container_id: &str) -> Result<(), MiniRunError> {
     let output = Command::new("docker")
         .arg("stop")
         .arg(container_id)
         .output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(MiniRunError::Docker(format!(
             "Failed to stop container: {}",
             String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
+        )));
     }
     Ok(())
 }
 
-async fn wait_for_200(url: &str, timeout: Duration) -> Result<(), Box<dyn std::error::Error>> {
+async fn wait_for_200(url: &str, timeout: Duration) -> Result<(), MiniRunError> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(1))
         .build()?;
@@ -156,27 +173,28 @@ async fn wait_for_200(url: &str, timeout: Duration) -> Result<(), Box<dyn std::e
 
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    Err(format!("Timeout waiting for 200 OK from {}", url).into())
+    Err(MiniRunError::Timeout {
+        url: url.to_string(),
+        secs: timeout.as_secs(),
+    })
 }
 
 async fn measure_once(
     image: &str,
     publish: &str,
     wait_url: &str,
-) -> Result<Duration, Box<dyn std::error::Error>> {
+    timeout: Duration,
+) -> Result<Duration, MiniRunError> {
     let start = Instant::now();
     let container_id = start_container(image, publish)?;
-    let result = wait_for_200(wait_url, Duration::from_secs(60)).await;
+    let result = wait_for_200(wait_url, timeout).await;
     let elapsed = start.elapsed();
     stop_container(&container_id)?;
-    match result {
-        Ok(()) => Ok(elapsed),
-        Err(e) => Err(e),
-    }
+    result?;
+    Ok(elapsed)
 }
 
-#[tokio::main]
-async fn main() {
+async fn run() -> Result<(), MiniRunError> {
     let args = Cli::parse();
     eprintln!(
         "would run {} ({} iters, wait_url: {})",
@@ -186,7 +204,14 @@ async fn main() {
     let mut durations = Vec::new();
     for i in 0..args.iters {
         eprintln!("Iteration {}/{}", i + 1, args.iters);
-        match measure_once(&args.image, &args.publish, &args.wait_url).await {
+        match measure_once(
+            &args.image,
+            &args.publish,
+            &args.wait_url,
+            Duration::from_secs(args.timeout),
+        )
+        .await
+        {
             Ok(duration) => {
                 eprintln!(
                     "Successfully received 200 OK from {} after {} ms",
@@ -224,7 +249,7 @@ async fn main() {
             OutputFormat::Json => {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&summary.to_json(durations.len())).unwrap()
+                    serde_json::to_string_pretty(&summary.to_json(durations.len()))?
                 );
             }
         }
@@ -235,6 +260,15 @@ async fn main() {
             durations.len(),
             args.iters
         );
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() {
+    if let Err(e) = run().await {
+        eprintln!("error: {}", e);
         std::process::exit(1);
     }
 }
