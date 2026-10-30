@@ -3,8 +3,8 @@
 Measure cold-start time of any containerised workload — p50 / p99 / mean
 over N iterations.
 
-> **Status:** work in progress. Scaffold stage (Phase 0 of 10).
-> See [Roadmap](#roadmap) below.
+> **Status:** work in progress. Phases 0–8 shipped, Phase 9 (tests) in
+> progress. See [Roadmap](#roadmap) below.
 
 ## What it does
 
@@ -14,20 +14,55 @@ health endpoint until it returns 200 OK, measures wall-clock from
 p50 / p99 / mean / stddev. Language-agnostic — works with nginx,
 Postgres, Spring Boot, Node.js, anything that speaks HTTP.
 
-Planned output:
+Example (real run, nginx on a laptop):
 
 ```
 $ minirun --image nginx:latest \
           --wait-url http://localhost:8080/ \
           --publish 8080:80 \
-          --iters 10
+          --iters 5
 
-cold start (10 runs):
-  p50:   124 ms
-  p99:   188 ms
-  mean:  132 ms ± 21 ms
-  min:   103 ms
-  max:   201 ms
+cold start (5 runs):
+ p50: 1447 ms
+ p99: 1859 ms
+ mean ± stddev: 1488 ± 206 ms
+ min: 1238 ms
+ max: 1859 ms
+```
+
+Progress lines (`Iteration 1/5`, per-run timings, errors) go to stderr;
+only the results go to stdout.
+
+## Options
+
+| Flag         | Default                 | Meaning                                              |
+|--------------|-------------------------|------------------------------------------------------|
+| `--image`    | (required)              | Docker image to run                                  |
+| `--publish`  | `8080:80`               | Port forwarding, `host:container`                    |
+| `--wait-url` | `http://localhost:8080` | HTTP URL polled until it answers 200 OK              |
+| `--iters`    | `5`                     | Number of cold-start iterations                      |
+| `--timeout`  | `60`                    | Seconds to wait for 200 OK, per iteration            |
+| `--output`   | `human`                 | `human` (table) or `json` (for CI pipelines)         |
+
+Failed iterations (timeout, Docker error) are reported and skipped. If
+any iteration fails, `minirun` exits with code 1.
+
+### JSON output
+
+`--output json` prints a single JSON (JavaScript Object Notation) object
+to stdout, so it can be piped straight into `jq`:
+
+```
+$ minirun --image nginx:latest --iters 3 --output json 2>/dev/null | jq .
+{
+  "runs": 3,
+  "p50_ms": 1283,
+  "p99_ms": 1306,
+  "mean_ms": 1255,
+  "stddev_ms": 56,
+  "min_ms": 1175,
+  "max_ms": 1306
+}
 ```
 
 ## Why this project
@@ -62,15 +97,15 @@ cargo build --release
 | Phase | Status  | What                                                                   |
 |-------|---------|------------------------------------------------------------------------|
 | 0     | shipped | Scaffold, `main` prints version                                        |
-| 1     | TODO    | CLI (`clap` derive): `--image`, `--iters`, `--wait-url`, `--publish`   |
-| 2     | TODO    | Spawn Docker container via `std::process::Command`                     |
-| 3     | TODO    | Monotonic timing with `Instant`                                        |
-| 4     | TODO    | Async HTTP health polling (`tokio` + `reqwest`)                        |
-| 5     | TODO    | Loop N iterations, collect timings                                     |
-| 6     | TODO    | Statistics (p50 / p99 / mean / stddev)                                 |
-| 7     | TODO    | JSON (JavaScript Object Notation) output mode                          |
-| 8     | TODO    | Error enum via `thiserror`                                             |
-| 9     | TODO    | Unit + integration tests                                               |
+| 1     | shipped | CLI (`clap` derive): `--image`, `--iters`, `--wait-url`, `--publish`   |
+| 2     | shipped | Spawn Docker container via `std::process::Command`                     |
+| 3     | shipped | Monotonic timing with `Instant`                                        |
+| 4     | shipped | Async HTTP health polling (`tokio` + `reqwest`)                        |
+| 5     | shipped | Loop N iterations, collect timings                                     |
+| 6     | shipped | Statistics (p50 / p99 / mean / stddev)                                 |
+| 7     | shipped | JSON (JavaScript Object Notation) output mode                          |
+| 8     | shipped | Error enum via `thiserror`                                             |
+| 9     | WIP     | Unit + integration tests                                               |
 | 10    | TODO    | CI badge + README polish                                               |
 
 ## License

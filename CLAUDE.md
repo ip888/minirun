@@ -39,7 +39,8 @@ Protocol) health endpoint:
 - Optional JSON (JavaScript Object Notation) output для CI
   (Continuous Integration) pipelines
 
-Language-agnostic — работает с nginx, Postgres, Spring Boot, Node.js.
+Language-agnostic — работает с nginx, Spring Boot, Node.js (через
+`--wait-url`) и Postgres (через `--wait-tcp`, Phase 9.5).
 Этот `minirun` обобщённый, не JVM-specific, чтобы руки размять по
 async stack без привязки к одной экосистеме.
 
@@ -100,7 +101,7 @@ reqwest` достаточно.
   попял/набрал.
 - Не хардкодить Spring Boot / JVM — это **universal** cold-start
   measurer. Примеры в README покажи для nginx + Spring Boot +
-  Postgres.
+  Postgres (Postgres — после Phase 9.5, через `--wait-tcp`).
 - Не делать merge/push до прохождения качества-чеклиста выше.
 - Не коммитить `.env`, `target/`, `.idea/`, `.vscode/settings.json`
   (личные), результаты бенчмарков (`bench-*.json`).
