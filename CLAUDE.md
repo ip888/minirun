@@ -55,7 +55,7 @@ GitHub Actions CI.
 
 <https://drive.google.com/file/d/1Z3QD5ARFI9AsaIhf-zd1txvCFPDKCXGi/view>
 
-**Текущая фаза:** Phase 8
+**Текущая фаза:** Phase 9
 
 <!-- 👆 обнови здесь когда перейдёшь на следующую фазу -->
 
