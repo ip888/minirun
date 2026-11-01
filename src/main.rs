@@ -272,3 +272,46 @@ async fn main() {
         std::process::exit(1);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ms(value: u64) -> Duration {
+        Duration::from_millis(value)
+    }
+
+    #[test]
+    fn stats_on_five_samples() {
+        let durations = vec![ms(20), ms(10), ms(40), ms(30), ms(50)];
+        let summary = stats(&durations);
+        assert_eq!(summary.min, ms(10));
+        assert_eq!(summary.max, ms(50));
+        assert_eq!(summary.p50, ms(30));
+        assert_eq!(summary.p99, ms(50));
+        assert_eq!(summary.mean, ms(30));
+        assert_eq!(summary.stddev.as_millis(), 14);
+    }
+
+    #[test]
+    fn stats_on_single_sample() {
+        let durations = vec![ms(42)];
+        let summary = stats(&durations);
+        assert_eq!(summary.min, ms(42));
+        assert_eq!(summary.max, ms(42));
+        assert_eq!(summary.p50, ms(42));
+        assert_eq!(summary.p99, ms(42));
+        assert_eq!(summary.mean, ms(42));
+        assert_eq!(summary.stddev.as_millis(), 0);
+    }
+
+    #[test]
+    fn stats_percentiles_on_hundred_samples() {
+        let durations = (1..=100).map(ms).collect::<Vec<_>>();
+        let summary = stats(&durations);
+        assert_eq!(summary.min, ms(1));
+        assert_eq!(summary.max, ms(100));
+        assert_eq!(summary.p50, ms(51));
+        assert_eq!(summary.p99, ms(100));
+    }
+}
