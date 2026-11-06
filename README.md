@@ -1,10 +1,15 @@
 # minirun
 
+[![ci](https://github.com/ip888/minirun/actions/workflows/ci.yml/badge.svg)](https://github.com/ip888/minirun/actions/workflows/ci.yml)
+
 Measure cold-start time of any containerised workload — p50 / p99 / mean
 over N iterations.
 
-> **Status:** work in progress. Phases 0–9.5 shipped, Phase 10 (CI +
-> README polish) next. See [Roadmap](#roadmap) below.
+> **Status:** all planned phases shipped. See [Roadmap](#roadmap) below.
+
+Measured cold-start (5 runs each, 2026-11, Intel Core i5-5250U laptop,
+Docker 29.7): **nginx 1447 ms**, **Postgres 17 3424 ms**, **Spring Boot
+(Petclinic) 14065 ms** — p50.
 
 ## What it does
 
@@ -16,7 +21,18 @@ p50 / p99 / mean / stddev. Language-agnostic — works with nginx,
 Spring Boot, Node.js, Postgres, Redis, anything with an HTTP endpoint or
 a TCP port.
 
-Example (real run, nginx on a laptop):
+## Install
+
+Requires Docker on the machine that runs `minirun`.
+
+```sh
+cargo install --git https://github.com/ip888/minirun
+minirun --help
+```
+
+## Examples
+
+HTTP service (real run, nginx):
 
 ```
 $ minirun --image nginx:latest \
@@ -34,6 +50,24 @@ cold start (5 runs):
 
 Progress lines (`Iteration 1/5`, per-run timings, errors) go to stderr;
 only the results go to stdout.
+
+JVM (Java Virtual Machine) service (real run, Spring Boot Petclinic with
+Actuator health endpoint):
+
+```
+$ minirun --image springio/petclinic \
+          --publish 8080:8080 \
+          --wait-url http://localhost:8080/actuator/health \
+          --timeout 120 \
+          --iters 5
+
+cold start (5 runs):
+ p50: 14065 ms
+ p99: 16121 ms
+ mean ± stddev: 14336 ± 1264 ms
+ min: 12402 ms
+ max: 16121 ms
+```
 
 Services without HTTP (real run, Postgres):
 
@@ -121,7 +155,7 @@ Not a Firecracker / rust-nano-vm replacement — those run their own VMs.
 
 ## Build
 
-Requires Rust stable (1.80+ probably works, 1.90+ definitely).
+Requires Rust 1.88+ (edition 2024, `if let` chains).
 
 ```sh
 cargo build --release
@@ -143,7 +177,7 @@ cargo build --release
 | 8     | shipped | Error enum via `thiserror`                                           |
 | 9     | shipped | Unit + integration tests                                             |
 | 9.5   | shipped | Bonus: `--wait-tcp` for non-HTTP services (Postgres), `-e KEY=VALUE` |
-| 10    | TODO    | CI badge + README polish                                             |
+| 10    | shipped | CI badge + README polish                                             |
 
 ## License
 
