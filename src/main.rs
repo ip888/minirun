@@ -1,6 +1,8 @@
 use clap::Parser;
 use std::process::Command;
 use std::time::{Duration, Instant};
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpStream;
 
 /// All the ways a minirun measurement can fail
 #[derive(Debug, thiserror::Error)]
@@ -9,8 +11,8 @@ enum MiniRunError {
     Docker(String),
     #[error("http: {0}")]
     Http(#[from] reqwest::Error),
-    #[error("timeout waiting for {url} after {secs}s")]
-    Timeout { url: String, secs: u64 },
+    #[error("timeout waiting for {target} after {secs}s")]
+    Timeout { target: String, secs: u64 },
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
     #[error("json: {0}")]
@@ -28,21 +30,55 @@ struct Cli {
     #[arg(long, default_value = "8080:80")]
     publish: String,
 
+    /// Environment variable for the container, `KEY=VALUE` (repeatable)
+    #[arg(short = 'e', long = "env")]
+    env: Vec<String>,
+
     /// HTTP URL to poll for readiness
     #[arg(long, default_value = "http://localhost:8080")]
     wait_url: String,
+
+    /// TCP `host:port` to probe for readiness instead of HTTP (Postgres, Redis, ...)
+    #[arg(long, conflicts_with = "wait_url")]
+    wait_tcp: Option<String>,
 
     /// Number of cold-start iterations to measure
     #[arg(long, default_value_t = 5)]
     iters: u32,
 
-    /// Seconds to wait for the service to answer 200 OK per iteration
+    /// Seconds to wait for the service to become ready, per iteration
     #[arg(long, default_value_t = 60)]
     timeout: u64,
 
     /// Output format for the results
     #[arg(long, value_enum, default_value = "human")]
     output: OutputFormat,
+}
+
+/// What "the service is ready" means for one measurement
+enum WaitTarget {
+    /// HTTP GET answers 200 OK
+    Http(String),
+    /// TCP connection is held by the real server, not by docker-proxy
+    Tcp(String),
+}
+
+impl WaitTarget {
+    fn from_cli(args: &Cli) -> Self {
+        match &args.wait_tcp {
+            Some(addr) => WaitTarget::Tcp(addr.clone()),
+            None => WaitTarget::Http(args.wait_url.clone()),
+        }
+    }
+}
+
+impl std::fmt::Display for WaitTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WaitTarget::Http(url) => write!(f, "http {url}"),
+            WaitTarget::Tcp(addr) => write!(f, "tcp {addr}"),
+        }
+    }
 }
 
 /// How to print the results
@@ -127,13 +163,14 @@ fn stats(durations: &[Duration]) -> Stats {
     }
 }
 
-fn start_container(image: &str, publish: &str) -> Result<String, MiniRunError> {
+fn start_container(image: &str, publish: &str, env: &[String]) -> Result<String, MiniRunError> {
     let output = Command::new("docker")
         .arg("run")
         .arg("--rm")
         .arg("-d")
         .arg("-p")
         .arg(publish)
+        .args(env.iter().flat_map(|e| ["-e", e]))
         .arg(image)
         .output()?;
     if !output.status.success() {
@@ -174,7 +211,52 @@ async fn wait_for_200(url: &str, timeout: Duration) -> Result<(), MiniRunError> 
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     Err(MiniRunError::Timeout {
-        url: url.to_string(),
+        target: url.to_string(),
+        secs: timeout.as_secs(),
+    })
+}
+
+/// How long a fresh TCP connection must stay open (and may stay silent)
+/// to count as the real server rather than docker-proxy
+const TCP_PROBE_WINDOW: Duration = Duration::from_millis(200);
+
+/// Decides whether a TCP probe reached the real service.
+/// `read` is `None` when nothing arrived within `TCP_PROBE_WINDOW`.
+fn tcp_probe_alive(read: Option<std::io::Result<usize>>) -> bool {
+    match read {
+        // open and silent: server waits for the client to speak (Postgres, Redis)
+        None => true,
+        // EOF: docker-proxy accepted, found nothing behind it, closed
+        Some(Ok(0)) => false,
+        // server spoke first (MySQL, SSH, SMTP greetings)
+        Some(Ok(_)) => true,
+        // reset and friends: same as EOF, just rougher
+        Some(Err(_)) => false,
+    }
+}
+
+/// Returns the moment of the connect that turned out to reach the real
+/// server, so the probe window is not added to the measurement
+async fn wait_for_tcp(addr: &str, timeout: Duration) -> Result<Instant, MiniRunError> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if let Ok(Ok(mut stream)) =
+            tokio::time::timeout(Duration::from_secs(1), TcpStream::connect(addr)).await
+        {
+            let connected_at = Instant::now();
+            let mut buf = [0u8; 1];
+            let read = tokio::time::timeout(TCP_PROBE_WINDOW, stream.read(&mut buf))
+                .await
+                .ok();
+            if tcp_probe_alive(read) {
+                return Ok(connected_at);
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    Err(MiniRunError::Timeout {
+        target: addr.to_string(),
         secs: timeout.as_secs(),
     })
 }
@@ -182,23 +264,26 @@ async fn wait_for_200(url: &str, timeout: Duration) -> Result<(), MiniRunError> 
 async fn measure_once(
     image: &str,
     publish: &str,
-    wait_url: &str,
+    env: &[String],
+    target: &WaitTarget,
     timeout: Duration,
 ) -> Result<Duration, MiniRunError> {
     let start = Instant::now();
-    let container_id = start_container(image, publish)?;
-    let result = wait_for_200(wait_url, timeout).await;
-    let elapsed = start.elapsed();
+    let container_id = start_container(image, publish, env)?;
+    let ready_at = match target {
+        WaitTarget::Http(url) => wait_for_200(url, timeout).await.map(|()| Instant::now()),
+        WaitTarget::Tcp(addr) => wait_for_tcp(addr, timeout).await,
+    };
     stop_container(&container_id)?;
-    result?;
-    Ok(elapsed)
+    Ok(ready_at? - start)
 }
 
 async fn run() -> Result<(), MiniRunError> {
     let args = Cli::parse();
+    let target = WaitTarget::from_cli(&args);
     eprintln!(
-        "would run {} ({} iters, wait_url: {})",
-        args.image, args.iters, args.wait_url
+        "would run {} ({} iters, wait: {})",
+        args.image, args.iters, target
     );
 
     let mut durations = Vec::new();
@@ -207,17 +292,14 @@ async fn run() -> Result<(), MiniRunError> {
         match measure_once(
             &args.image,
             &args.publish,
-            &args.wait_url,
+            &args.env,
+            &target,
             Duration::from_secs(args.timeout),
         )
         .await
         {
             Ok(duration) => {
-                eprintln!(
-                    "Successfully received 200 OK from {} after {} ms",
-                    args.wait_url,
-                    duration.as_millis()
-                );
+                eprintln!("Ready ({}) after {} ms", target, duration.as_millis());
                 durations.push(duration);
             }
             Err(e) => {
@@ -313,5 +395,37 @@ mod tests {
         assert_eq!(summary.max, ms(100));
         assert_eq!(summary.p50, ms(51));
         assert_eq!(summary.p99, ms(100));
+    }
+
+    #[test]
+    fn tcp_probe_tells_proxy_from_real_server() {
+        use std::io::{Error, ErrorKind};
+        assert!(tcp_probe_alive(None), "silent open socket = live server");
+        assert!(!tcp_probe_alive(Some(Ok(0))), "EOF = docker-proxy");
+        assert!(tcp_probe_alive(Some(Ok(1))), "greeting = live server");
+        assert!(
+            !tcp_probe_alive(Some(Err(Error::from(ErrorKind::ConnectionReset)))),
+            "reset = not ready"
+        );
+    }
+
+    #[test]
+    fn wait_url_and_wait_tcp_are_mutually_exclusive() {
+        let both = Cli::try_parse_from([
+            "minirun",
+            "--image",
+            "x",
+            "--wait-url",
+            "http://a",
+            "--wait-tcp",
+            "a:1",
+        ]);
+        assert!(both.is_err());
+    }
+
+    #[test]
+    fn wait_tcp_alone_overrides_default_wait_url() {
+        let args = Cli::try_parse_from(["minirun", "--image", "x", "--wait-tcp", "a:1"]).unwrap();
+        assert!(matches!(WaitTarget::from_cli(&args), WaitTarget::Tcp(addr) if addr == "a:1"));
     }
 }

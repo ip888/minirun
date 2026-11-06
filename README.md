@@ -3,17 +3,18 @@
 Measure cold-start time of any containerised workload — p50 / p99 / mean
 over N iterations.
 
-> **Status:** work in progress. Phases 0–9 shipped, bonus Phase 9.5
-> (`--wait-tcp` for non-HTTP services) in progress. See [Roadmap](#roadmap)
-> below.
+> **Status:** work in progress. Phases 0–9.5 shipped, Phase 10 (CI +
+> README polish) next. See [Roadmap](#roadmap) below.
 
 ## What it does
 
 Spawns a Docker container, polls an HTTP (HyperText Transfer Protocol)
-health endpoint until it returns 200 OK, measures wall-clock from
+health endpoint until it returns 200 OK — or, for services without HTTP,
+a TCP (Transmission Control Protocol) port — measures wall-clock from
 `docker run` to the first healthy response, repeats N times, and reports
 p50 / p99 / mean / stddev. Language-agnostic — works with nginx,
-Postgres, Spring Boot, Node.js, anything that speaks HTTP.
+Spring Boot, Node.js, Postgres, Redis, anything with an HTTP endpoint or
+a TCP port.
 
 Example (real run, nginx on a laptop):
 
@@ -34,19 +35,53 @@ cold start (5 runs):
 Progress lines (`Iteration 1/5`, per-run timings, errors) go to stderr;
 only the results go to stdout.
 
+Services without HTTP (real run, Postgres):
+
+```
+$ minirun --image postgres:17 \
+          -e POSTGRES_PASSWORD=x \
+          --publish 5432:5432 \
+          --wait-tcp localhost:5432 \
+          --iters 5
+
+cold start (5 runs):
+ p50: 3424 ms
+ p99: 4684 ms
+ mean ± stddev: 3641 ± 525 ms
+ min: 3308 ms
+ max: 4684 ms
+```
+
 ## Options
 
-| Flag         | Default                 | Meaning                                      |
-| ------------ | ----------------------- | -------------------------------------------- |
-| `--image`    | (required)              | Docker image to run                          |
-| `--publish`  | `8080:80`               | Port forwarding, `host:container`            |
-| `--wait-url` | `http://localhost:8080` | HTTP URL polled until it answers 200 OK      |
-| `--iters`    | `5`                     | Number of cold-start iterations              |
-| `--timeout`  | `60`                    | Seconds to wait for 200 OK, per iteration    |
-| `--output`   | `human`                 | `human` (table) or `json` (for CI pipelines) |
+| Flag          | Default                 | Meaning                                                         |
+| ------------- | ----------------------- | --------------------------------------------------------------- |
+| `--image`     | (required)              | Docker image to run                                             |
+| `--publish`   | `8080:80`               | Port forwarding, `host:container`                               |
+| `-e`, `--env` | (none)                  | `KEY=VALUE` passed to the container, repeatable                 |
+| `--wait-url`  | `http://localhost:8080` | HTTP URL polled until it answers 200 OK                         |
+| `--wait-tcp`  | (none)                  | `host:port` probed instead of HTTP; conflicts with `--wait-url` |
+| `--iters`     | `5`                     | Number of cold-start iterations                                 |
+| `--timeout`   | `60`                    | Seconds to wait for readiness, per iteration                    |
+| `--output`    | `human`                 | `human` (table) or `json` (for CI pipelines)                    |
 
 Failed iterations (timeout, Docker error) are reported and skipped. If
 any iteration fails, `minirun` exits with code 1.
+
+### How `--wait-tcp` decides "ready"
+
+With `--publish`, Docker's `docker-proxy` accepts TCP connections on the
+host port immediately — before the service inside has started. So a
+successful connect alone means nothing. `minirun` connects, then reads
+for 200 ms:
+
+- connection closed (EOF) or reset → only the proxy answered, retry;
+- connection stays open and silent → real server waiting for the client
+  (Postgres, Redis) → ready;
+- data arrives → real server that speaks first (MySQL, SSH) → ready.
+
+The measurement uses the moment of that connect, so the 200 ms window
+is not added to the result.
 
 ### JSON output
 
@@ -107,7 +142,7 @@ cargo build --release
 | 7     | shipped | JSON (JavaScript Object Notation) output mode                        |
 | 8     | shipped | Error enum via `thiserror`                                           |
 | 9     | shipped | Unit + integration tests                                             |
-| 9.5   | WIP     | Bonus: `--wait-tcp` for non-HTTP services (Postgres), `-e KEY=VALUE` |
+| 9.5   | shipped | Bonus: `--wait-tcp` for non-HTTP services (Postgres), `-e KEY=VALUE` |
 | 10    | TODO    | CI badge + README polish                                             |
 
 ## License
