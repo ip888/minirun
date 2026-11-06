@@ -56,7 +56,8 @@ GitHub Actions CI.
 
 <https://drive.google.com/file/d/11YD4qbxgPY7eykEAU7pr1SYdSiOflKi-/view>
 
-**Текущая фаза:** Phase 10
+**Текущая фаза:** все фазы 0–10 (+ бонус 9.5) завершены. Дальше —
+опционально «Final»: публикация на crates.io.
 
 <!-- 👆 обнови здесь когда перейдёшь на следующую фазу -->
 
