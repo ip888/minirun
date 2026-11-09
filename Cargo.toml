@@ -5,6 +5,12 @@ edition = "2024"
 description = "Measure cold-start of a containerised workload (p50/p99)"
 license = "MIT"
 authors = ["Ihor Petrov <ihorpetroff@gmail.com>"]
+repository = "https://github.com/ip888/minirun"
+readme = "README.md"
+keywords = ["docker", "cold-start", "benchmark", "latency", "cli"]
+categories = ["command-line-utilities", "development-tools::profiling"]
+rust-version = "1.88"
+include = ["src/**", "tests/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
