@@ -1,5 +1,6 @@
 # minirun
 
+[![crates.io](https://img.shields.io/crates/v/minirun.svg)](https://crates.io/crates/minirun)
 [![ci](https://github.com/ip888/minirun/actions/workflows/ci.yml/badge.svg)](https://github.com/ip888/minirun/actions/workflows/ci.yml)
 
 Measure cold-start time of any containerised workload — p50 / p99 / mean
@@ -26,8 +27,14 @@ a TCP port.
 Requires Docker on the machine that runs `minirun`.
 
 ```sh
-cargo install --git https://github.com/ip888/minirun
+cargo install minirun
 minirun --help
+```
+
+Latest unreleased version straight from GitHub:
+
+```sh
+cargo install --git https://github.com/ip888/minirun
 ```
 
 ## Examples
