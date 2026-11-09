@@ -185,4 +185,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Author
 
-[Ihor Petroff](https://github.com/ip888)
+[Ihor Petrov](https://github.com/ip888)
