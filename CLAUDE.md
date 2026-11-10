@@ -106,3 +106,5 @@ reqwest` достаточно.
 - Не делать merge/push до прохождения качества-чеклиста выше.
 - Не коммитить `.env`, `target/`, `.idea/`, `.vscode/settings.json`
   (личные), результаты бенчмарков (`bench-*.json`).
+- Не добавлять `Co-Authored-By` (и любую другую атрибуцию Claude) в
+  коммиты и PR (pull request) descriptions.
